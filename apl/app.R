@@ -1,6 +1,7 @@
 # Pustaka ----
 library(shiny)
 library(tidyverse)
+library(scales)
 
 # Antarmuka pengguna ----
 ui <- fluidPage(
@@ -71,12 +72,11 @@ ui <- fluidPage(
                 )
               ),
               tabPanel("Ringkasan",
-                fluidRow(
-                  column(6,
-                         plotOutput("plot_ringkasan_sk")),
-                  column(6,
-                         textOutput("teks_ringkasan_sk"))
-                )
+                br(),
+                plotOutput("plot_selisih_sk_zt",
+                             height = "300px"),
+                br(),
+                plotOutput("plot_wakil_sampel_sk", height = "300px")
               )
               )
               )
@@ -231,6 +231,8 @@ server <- function(input, output) {
     )
   }
   
+  rep_membuat_set_sampel <- repeatable(membuat_set_sampel)
+  
   menghitung_statistik <- function(data, mu, alternatif = "dua",
                                    sig = .05) {
     seed = as.numeric(Sys.Date())
@@ -291,15 +293,13 @@ server <- function(input, output) {
   
   komposisi_sampel_stat <- function(k, n, mu, sigma,
                                     alternatif = "dua", sig = .05) {
-    set_sampel <- membuat_set_sampel(k, n, mu, sigma)
+    set_sampel <- rep_membuat_set_sampel(k, n, mu, sigma)
     data_stat <- menghitung_statistik(set_sampel, mu, alternatif, sig)
     return(data_stat)
   }
   
-  rep_komposisi_sampel_stat <- repeatable(komposisi_sampel_stat)
-  
   stat_set_sampel <- reactive({
-    rep_komposisi_sampel_stat(
+    komposisi_sampel_stat(
       input$banyak_sampel, input$ukuran_sampel, input$rerata_pop,
       input$sigma_pop, alternatif = input$jenis_uji, sig = input$tingkat_sig
     )
@@ -679,6 +679,90 @@ server <- function(input, output) {
     persen_menolak <- round(mean(data_stat$t_sig) * 100, 2)
     
     teks <- paste("Gambar ", fig_num, ": Statistik-statistik uji dari ", k, " sampel yang dibandingkan dengan model matematis distribusi-t. Terdapat ", persen_menolak, "% sampel yang menolak hipotesis nol meskipun hipotesis nol tersebut benar.", sep = "")
+  })
+  
+  ## Plot selisih SK ----
+  output$plot_selisih_sk_zt <- renderPlot({
+    data_stat <- stat_set_sampel()
+    data_stat <- data_stat %>% 
+      select(id_sampel, z_mencakup, t_mencakup) %>% 
+      summarise(z = mean(z_mencakup), t = mean(t_mencakup)) %>% 
+      pivot_longer(cols = c(z, t), names_to = "dist_sampling", 
+                   values_to = "prop_mencakup") %>% 
+      mutate(persen_mencakup = paste0(round(prop_mencakup * 100, 2),
+                                     "%"))
+    
+    tingkat_keper <- 1 - input$tingkat_sig
+    x_maks <- max(data_stat$prop_mencakup, tingkat_keper)
+    x_min <- min(data_stat$prop_mencakup, tingkat_keper)
+    x_range <- x_maks - x_min
+    plot_range <- c(x_min - x_range / 4,
+                    x_maks + x_range / 4)
+    ggplot(data_stat) +
+      geom_segment(aes(x = prop_mencakup, xend = tingkat_keper,
+                       y = dist_sampling, yend = dist_sampling,
+                       col = dist_sampling),
+                   show.legend = FALSE, linewidth = 5,
+                   alpha = .6) +
+      geom_segment(aes(x = tingkat_keper, xend = tingkat_keper,
+                       y = 0, yend = Inf),
+                   linewidth = 3, alpha = .6) +
+      geom_point(aes(x = prop_mencakup,
+                     y = dist_sampling,
+                     col = dist_sampling),
+                 size = 8) +
+      geom_label(aes(x = prop_mencakup, y = dist_sampling,
+                    label = persen_mencakup, col = dist_sampling),
+                fill = "white", fontface = "bold",
+                nudge_y = .175, label.r = unit(0.1, "lines"),
+                show.legend = FALSE) +
+      scale_x_continuous(labels = label_percent(scale = 100),
+                         limits = plot_range) +
+      scale_color_brewer(palette = "Dark2", name = "Distribusi sampling") +
+      theme_bw(base_size = 14) +
+      theme(legend.position = "bottom",
+            axis.title.y = element_blank(),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank()) +
+      labs(x = "Persentase")
+  })
+  
+  ## Plot perwakilan sampel ----
+  output$plot_wakil_sampel_sk <- renderPlot({
+    rerata_pop <- input$rerata_pop
+    data_sampel <- rep_membuat_set_sampel(input$banyak_sampel,
+                                      input$ukuran_sampel,
+                                      input$rerata_pop,
+                                      input$sigma_pop)
+    data_stat <- stat_set_sampel()
+    data_stat <- data_stat %>% 
+      mutate(mencakup = ifelse(z_mencakup == FALSE & t_mencakup == FALSE,
+                               0, ifelse(z_mencakup == FALSE & t_mencakup == TRUE, 
+                                         1, 2))) %>% 
+      group_by(mencakup) %>% 
+      slice_sample(n = 5, replace = FALSE)
+    data_stat_simpel <- data_stat %>% 
+      select(id_sampel, rerata, se, mencakup)
+    
+    no_sampel <- data_stat$id_sampel
+    
+    data_sampel_wakil <- data_sampel %>% 
+      filter(id_sampel %in% no_sampel)
+    data_sampel_wakil <- left_join(data_sampel_wakil, data_stat_simpel,
+                                   by = "id_sampel")
+    data_sampel_wakil %>% 
+      ggplot(aes(x = fct_reorder(factor(id_sampel), mencakup),
+                 y = nilai, color = factor(mencakup))) +
+      geom_violin(fill = "whitesmoke", linewidth = .75) +
+      geom_point(size = 3, alpha = .6) +
+      geom_crossbar(stat = "summary", color = "black",
+                    width = .5, fatten = 3) +
+      geom_hline(yintercept = rerata_pop,
+                 linewidth = 1, linetype = "dashed") +
+      theme_bw(base_size = 14) +
+      scale_color_brewer(palette = "Dark2") +
+      theme(legend.position = "bottom") +
+      labs(x = "ID Sampel", y = "Nilai")
   })
   
 }
