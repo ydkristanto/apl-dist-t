@@ -2,75 +2,6 @@
 library(shiny)
 library(tidyverse)
 
-# Fungsi untuk digunakan kembali ----
-membuat_set_sampel <- function(k, n, mu, sigma) {
-  set.seed(42)
-  set_sampel <- matrix(round(rnorm(k * n, mean = mu, sd = sigma)),
-                       nrow = n)
-  tibble(
-    id_sampel = rep(1:k, each = n),
-    nilai = as.vector(set_sampel)
-  )
-}
-
-menghitung_statistik <- function(data, mu, alternatif = "dua",
-                                 sig = .05) {
-  tingkat_kepercayaan <- 1 - sig
-  statistik <- data %>%
-    group_by(id_sampel) %>%
-    summarize(
-      rerata = mean(nilai),
-      sd = sd(nilai),
-      se = sd(nilai) / sqrt(n()),
-      t_bawah = mean(nilai) - qt(1 - sig / 2,
-                                 n() - 1) * (sd(nilai) / sqrt(n())),
-      t_atas = mean(nilai) + qt(1 - sig / 2,
-                                n() - 1) * (sd(nilai) / sqrt(n())),
-      z_bawah = mean(nilai) - qnorm(1 - sig / 2,
-                                    mean = 0, sd = 1),
-      z_atas = mean(nilai) + qnorm(1 - sig / 2,
-                                   mean = 0, sd = 1),
-      stat_uji = (mean(nilai) - mu) / (sd(nilai) / sqrt(n()))
-    )
-  # Menambahkan variabel apakah selang kepercayaan mencakup mu
-  statistik <- mutate(statistik,
-                      t_mencakup = t_bawah <= mu & t_atas >= mu,
-                      z_mencakup = z_bawah <= mu & z_atas >= mu
-                      )
-  
-  # Melakukan uji hipotesis untuk menentukan nilai p
-  if (alternatif == "dua") {
-    statistik <- mutate(statistik,
-                        t_p = 2 * pt(-abs(stat_uji),
-                                     df = n() - 1),
-                        z_p = 2 * pnorm(-abs(stat_uji),
-                                        mean = 0, sd = 1))
-  } else if (alternatif == "kiri") {
-    statistik <- mutate(statistik,
-                        t_p = pt(stat_uji, df = n() - 1),
-                        z_p = pnorm(stat_uji,
-                                    mean = 0, sd = 1))
-  } else if (alternative == "kanan") {
-    statistik <- mutate(statistik,
-                        t_p = 1 - pt(stat_uji, df = n() - 1),
-                        z_p = 1 - pnorm(stat_uji, mean = 0, sd = 1))
-  }
-  
-  # Menentukan apakah uji hipotesisnya signifikan
-  statistik <- mutate(statistik,
-                      t_sig = t_p <= sig,
-                      z_sig = z_p <= sig
-                      )
-  return(statistik)
-}
-
-komposisi_sampel_stat <- function(k, n, mu, sigma,
-                                  alternatif = "dua", sig = .05) {
-  set_sampel <- membuat_set_sampel(k, n, mu, sigma)
-  data_stat <- menghitung_statistik(set_sampel, mu, alternatif, sig)
-  return(data_stat)
-}
-
 # Antarmuka pengguna ----
 ui <- fluidPage(
   title = "Mengapa Distribusi-t?",
@@ -241,7 +172,6 @@ ui <- fluidPage(
              )
 )
 # Fungsi peladen ----
-seed <- as.numeric(Sys.time())
 server <- function(input, output) {
   ## Menghubungkan nilai pada beberapa input ----
   observeEvent(input$ukuran_sampel, {
@@ -290,82 +220,106 @@ server <- function(input, output) {
   })
   
   ## Membuat sampel-sampel acak ----
-  membuat_sampel <- function(mean_pop, sd_pop, jenis_uji, sig, dist, n, k) {
-    t_keper <- (1 - sig)
-    data_stat <- lapply(1:k, function(i) {
-      sampel <- round(rnorm(n, mean = mean_pop, sd = sd_pop))
-      # Untuk membuat selang kepercayaan
-      rerata <- mean(sampel)
-      sd_sampel <- sd(sampel)
-      t_selang <- t.test(sampel,
-                         conf.level = as.numeric(t_keper))$conf.int
-      t_mencakup <- t_selang[1] <= mean_pop &&
-        t_selang[2] >= mean_pop
-      z_bintang <- qnorm((1 - t_keper) / 2, lower.tail = FALSE)
-      z_selang <- c(rerata - z_bintang * sd_sampel / sqrt(n),
-                    rerata + z_bintang * sd_sampel / sqrt(n))
-      z_mencakup <- z_selang[1] <= mean_pop &&
-        z_selang[2] >= mean_pop
-      # Untuk uji hipotesis
-      if (jenis_uji == "dua") {
-        stat_uji <- t.test(sampel,
-                             alternative = "two.sided",
-                             mu = mean_pop)$statistic
-        t_nilai_p <- t.test(sampel,
-                            alternative = "two.sided",
-                            mu = mean_pop)$p.value
-        z_nilai_p <- 2 * pnorm(stat_uji, mean = 0, sd = 1,
-                               lower.tail = (stat_uji <= 0))
-      } else if (jenis_uji == "kiri") {
-        stat_uji <- t.test(sampel,
-                           alternative = "less",
-                           mu = mean_pop)$statistic
-        t_nilai_p <- t.test(sampel,
-                            alternative = "less",
-                            mu = mean_pop)$p.value
-        z_nilai_p <- pnorm(stat_uji, mean = 0, sd = 1,
-                               lower.tail = TRUE)
-      } else if (jenis_uji == "kanan") {
-        stat_uji <- t.test(sampel,
-                           alternative = "greater",
-                           mu = mean_pop)$statistic
-        t_nilai_p <- t.test(sampel,
-                            alternative = "greater",
-                            mu = mean_pop)$p.value
-        z_nilai_p <- pnorm(stat_uji, mean = 0, sd = 1,
-                           lower.tail = FALSE)
-      }
-      t_tolak_H0 <- t_nilai_p <= sig
-      z_tolak_H0 <- z_nilai_p <= sig
-      tibble(id_sampel = i, rerata = rerata, sd = sd_sampel,
-             t_bawah = t_selang[1], t_atas = t_selang[2],
-             t_mencakup = t_mencakup, z_bawah = z_selang[1],
-             z_atas = z_selang[2], z_mencakup = z_mencakup,
-             stat_uji = stat_uji, t_p = t_nilai_p,
-             t_sig = t_tolak_H0, z_p = z_nilai_p,
-             z_sig = z_tolak_H0)
-    })
+  membuat_set_sampel <- function(k, n, mu, sigma) {
+    seed <- as.numeric(Sys.Date())
+    set.seed(seed)
+    set_sampel <- matrix(round(rnorm(k * n, mean = mu, sd = sigma)),
+                         nrow = n)
+    tibble(
+      id_sampel = rep(1:k, each = n),
+      nilai = as.vector(set_sampel)
+    )
+  }
+  
+  menghitung_statistik <- function(data, mu, alternatif = "dua",
+                                   sig = .05) {
+    seed = as.numeric(Sys.Date())
+    tingkat_kepercayaan <- 1 - sig
+    statistik <- data %>%
+      group_by(id_sampel) %>%
+      summarize(
+        ukuran = n(),
+        rerata = mean(nilai),
+        sd = sd(nilai),
+        se = sd(nilai) / sqrt(n()),
+        t_bawah = mean(nilai) - qt(1 - sig / 2,
+                                   n() - 1) * (sd(nilai) / sqrt(n())),
+        t_atas = mean(nilai) + qt(1 - sig / 2,
+                                  n() - 1) * (sd(nilai) / sqrt(n())),
+        z_bawah = mean(nilai) - qnorm(1 - sig / 2,
+                                      mean = 0,
+                                      sd = 1) * (sd(nilai) / sqrt(n())),
+        z_atas = mean(nilai) + qnorm(1 - sig / 2,
+                                     mean = 0,
+                                     sd = 1) * (sd(nilai) / sqrt(n())),
+        stat_uji = (mean(nilai) - mu) / (sd(nilai) / sqrt(n()))
+      )
+    # Menambahkan variabel apakah selang kepercayaan mencakup mu
+    statistik <- mutate(statistik,
+                        t_mencakup = t_bawah <= mu & t_atas >= mu,
+                        z_mencakup = z_bawah <= mu & z_atas >= mu
+    )
+    
+    # Melakukan uji hipotesis untuk menentukan nilai p
+    if (alternatif == "dua") {
+      statistik <- mutate(statistik,
+                          t_p = 2 * pt(-abs(stat_uji),
+                                       df = ukuran - 1),
+                          z_p = 2 * pnorm(-abs(stat_uji),
+                                          mean = 0, sd = 1)
+                          )
+    } else if (alternatif == "kiri") {
+      statistik <- mutate(statistik,
+                          t_p = pt(stat_uji, df = ukuran - 1),
+                          z_p = pnorm(stat_uji,
+                                      mean = 0, sd = 1)
+                          )
+    } else if (alternatif == "kanan") {
+      statistik <- mutate(statistik,
+                          t_p = 1 - pt(stat_uji, df = ukuran - 1),
+                          z_p = 1 - pnorm(stat_uji, mean = 0, sd = 1)
+                          )
+    }
+    
+    # Menentukan apakah uji hipotesisnya signifikan
+    statistik <- mutate(statistik,
+                        t_sig = t_p <= sig,
+                        z_sig = z_p <= sig
+                        )
+    return(statistik)
+  }
+  
+  komposisi_sampel_stat <- function(k, n, mu, sigma,
+                                    alternatif = "dua", sig = .05) {
+    set_sampel <- membuat_set_sampel(k, n, mu, sigma)
+    data_stat <- menghitung_statistik(set_sampel, mu, alternatif, sig)
     return(data_stat)
   }
-  rep_membuat_sampel <- repeatable(membuat_sampel)
+  
+  rep_komposisi_sampel_stat <- repeatable(komposisi_sampel_stat)
+  
+  stat_set_sampel <- reactive({
+    rep_komposisi_sampel_stat(
+      input$banyak_sampel, input$ukuran_sampel, input$rerata_pop,
+      input$sigma_pop, alternatif = input$jenis_uji, sig = input$tingkat_sig
+    )
+  })
+  
   ## Plot SK distribusi z ----
     output$plot_sk_z <- renderPlot({
-      data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                  input$jenis_uji, input$tingkat_sig,
-                                  input$dist_sampling, input$ukuran_sampel,
-                                  input$banyak_sampel)
+      data_stat <- stat_set_sampel()
       k <- input$banyak_sampel
       alpha_sk <- function(x) {
         1 / 1372000 * (x - 1000)^2 + 3 / 10
       }
     ggplot() +
-      geom_segment(data = do.call(rbind, data_stat),
+      geom_segment(data = data_stat,
                    aes(x = id_sampel, xend = id_sampel,
                        y = z_bawah, yend = z_atas,
                        color = factor(z_mencakup)),
                    linewidth = 1,
                    alpha = alpha_sk(k)) +
-      geom_point(data = do.call(rbind, data_stat),
+      geom_point(data = data_stat,
                  aes(x = id_sampel, y = rerata,
                      color = factor(z_mencakup))) +
       geom_hline(yintercept = input$rerata_pop, linetype = "dashed",
@@ -386,10 +340,7 @@ server <- function(input, output) {
   })
   ## Teks distribusi z ----
   output$teks_sk_z <- renderText({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                   input$jenis_uji, input$tingkat_sig,
-                                   input$dist_sampling, input$ukuran_sampel,
-                                   input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     if ("dist_t" %in% input$dist_sampling) {
       fig_num <- "1.a"
     } else {
@@ -397,29 +348,25 @@ server <- function(input, output) {
     }
     tingkat_keper <- input$tingkat_kepercayaan
     k <- input$banyak_sampel
-    persen_mencakup <- round(mean(sapply(data_stat,
-                                   function(i) i$z_mencakup)) * 100, 2)
+    persen_mencakup <- round(mean(data_stat$z_mencakup) * 100, 2)
     
     teks <- paste("Gambar ", fig_num, ": Selang-selang kepercayaan dari ", k, " sampel yang dikonstruksi dengan tingkat kepercayaan ",tingkat_keper, "% dan menggunakan distribusi sampling statistik z. Terdapat ", persen_mencakup, "% selang kepercayaan yang memuat rerata populasinya.", sep = "")
   })
   ## Plot SK distribusi t ----
   output$plot_sk_t <- renderPlot({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                input$jenis_uji, input$tingkat_sig,
-                                input$dist_sampling, input$ukuran_sampel,
-                                input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     k <- input$banyak_sampel
     alpha_sk <- function(x) {
       1 / 1372000 * (x - 1000)^2 + 3 / 10
     }
     ggplot() +
-      geom_segment(data = do.call(rbind, data_stat),
+      geom_segment(data = data_stat,
                    aes(x = id_sampel, xend = id_sampel,
                        y = t_bawah, yend = t_atas,
                        color = factor(t_mencakup)),
                    linewidth = 1,
                    alpha = alpha_sk(k)) +
-      geom_point(data = do.call(rbind, data_stat),
+      geom_point(data = data_stat,
                  aes(x = id_sampel, y = rerata,
                      color = factor(t_mencakup))) +
       geom_hline(yintercept = input$rerata_pop, linetype = "dashed",
@@ -440,10 +387,7 @@ server <- function(input, output) {
   })
   ## Teks distribusi t ----
   output$teks_sk_t <- renderText({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                    input$jenis_uji, input$tingkat_sig,
-                                    input$dist_sampling, input$ukuran_sampel,
-                                    input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     if ("dist_z" %in% input$dist_sampling) {
       fig_num <- "1.b"
     } else {
@@ -451,18 +395,14 @@ server <- function(input, output) {
     }
     tingkat_keper <- input$tingkat_kepercayaan
     k <- input$banyak_sampel
-    persen_mencakup <- round(mean(sapply(data_stat,
-                                   function(i) i$t_mencakup)) * 100, 2)
+    persen_mencakup <- round(mean(data_stat$t_mencakup) * 100, 2)
     
     paste("Gambar ", fig_num, ": Selang-selang kepercayaan dari ", k, " sampel yang dikonstruksi dengan tingkat kepercayaan ",tingkat_keper, "% dan menggunakan distribusi-t. Terdapat ", persen_mencakup, "% selang kepercayaan yang memuat rerata populasinya.", sep = "")
   })
   
   ## Plot statistik uji z ----
   output$plot_stat_z <- renderPlot({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                    input$jenis_uji, input$tingkat_sig,
-                                    input$dist_sampling, input$ukuran_sampel,
-                                    input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     k <- input$banyak_sampel
     alpha_stat_uji <- function(x) {
       1 / 1372000 * (x - 1000)^2 + 3 / 10
@@ -490,7 +430,7 @@ server <- function(input, output) {
         geom_segment(aes(x = z_kritis, xend = z_kritis,
                          y = 0, yend = fnorm(z_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = z_sig),
                      alpha = alpha_stat_uji(k),
@@ -525,7 +465,7 @@ server <- function(input, output) {
         geom_segment(aes(x = z_kritis, xend = z_kritis,
                          y = 0, yend = fnorm(z_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = z_sig),
                      alpha = alpha_stat_uji(k),
@@ -560,7 +500,7 @@ server <- function(input, output) {
         geom_segment(aes(x = z_kritis, xend = z_kritis,
                          y = 0, yend = fnorm(z_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = z_sig),
                      alpha = alpha_stat_uji(k),
@@ -587,10 +527,7 @@ server <- function(input, output) {
   
   ## Teks statistik uji z ----
   output$teks_stat_z <- renderText({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                    input$jenis_uji, input$tingkat_sig,
-                                    input$dist_sampling, input$ukuran_sampel,
-                                    input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     if ("dist_t" %in% input$dist_sampling_2) {
       fig_num <- "3.a"
     } else {
@@ -598,18 +535,14 @@ server <- function(input, output) {
     }
     sig <- input$tingkat_sig
     k <- input$banyak_sampel
-    persen_menolak <- round(mean(sapply(data_stat,
-                                         function(i) i$z_sig)) * 100, 2)
+    persen_menolak <- round(mean(data_stat$z_sig) * 100, 2)
     
     teks <- paste("Gambar ", fig_num, ": Statistik-statistik uji dari ", k, " sampel yang dibandingkan dengan model matematis kurva-z. Terdapat ", persen_menolak, "% sampel yang menolak hipotesis nol meskipun hipotesis nol tersebut benar.", sep = "")
   })
   
   ## Plot statistik uji t ----
   output$plot_stat_t <- renderPlot({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                    input$jenis_uji, input$tingkat_sig,
-                                    input$dist_sampling, input$ukuran_sampel,
-                                    input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     k <- input$banyak_sampel
     alpha_stat_uji <- function(x) {
       1 / 1372000 * (x - 1000)^2 + 3 / 10
@@ -638,7 +571,7 @@ server <- function(input, output) {
         geom_segment(aes(x = t_kritis, xend = t_kritis,
                          y = 0, yend = ft(t_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = t_sig),
                      alpha = alpha_stat_uji(k),
@@ -673,7 +606,7 @@ server <- function(input, output) {
         geom_segment(aes(x = t_kritis, xend = t_kritis,
                          y = 0, yend = ft(t_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = t_sig),
                      alpha = alpha_stat_uji(k),
@@ -708,7 +641,7 @@ server <- function(input, output) {
         geom_segment(aes(x = t_kritis, xend = t_kritis,
                          y = 0, yend = ft(t_kritis)),
                      col = "red", linewidth = 1) +
-        geom_segment(data = do.call(rbind, data_stat),
+        geom_segment(data = data_stat,
                      aes(x = stat_uji, xend = stat_uji,
                          y = 0, yend = Inf, col = t_sig),
                      alpha = alpha_stat_uji(k),
@@ -735,10 +668,7 @@ server <- function(input, output) {
   
   ## Teks statistik uji t ----
   output$teks_stat_t <- renderText({
-    data_stat <- rep_membuat_sampel(input$rerata_pop, input$sigma_pop,
-                                    input$jenis_uji, input$tingkat_sig,
-                                    input$dist_sampling, input$ukuran_sampel,
-                                    input$banyak_sampel)
+    data_stat <- stat_set_sampel()
     if ("dist_z" %in% input$dist_sampling_2) {
       fig_num <- "3.b"
     } else {
@@ -746,8 +676,7 @@ server <- function(input, output) {
     }
     sig <- input$tingkat_sig
     k <- input$banyak_sampel
-    persen_menolak <- round(mean(sapply(data_stat,
-                                        function(i) i$t_sig)) * 100, 2)
+    persen_menolak <- round(mean(data_stat$t_sig) * 100, 2)
     
     teks <- paste("Gambar ", fig_num, ": Statistik-statistik uji dari ", k, " sampel yang dibandingkan dengan model matematis distribusi-t. Terdapat ", persen_menolak, "% sampel yang menolak hipotesis nol meskipun hipotesis nol tersebut benar.", sep = "")
   })
