@@ -2,6 +2,75 @@
 library(shiny)
 library(tidyverse)
 
+# Fungsi untuk digunakan kembali ----
+membuat_set_sampel <- function(k, n, mu, sigma) {
+  set.seed(42)
+  set_sampel <- matrix(round(rnorm(k * n, mean = mu, sd = sigma)),
+                       nrow = n)
+  tibble(
+    id_sampel = rep(1:k, each = n),
+    nilai = as.vector(set_sampel)
+  )
+}
+
+menghitung_statistik <- function(data, mu, alternatif = "dua",
+                                 sig = .05) {
+  tingkat_kepercayaan <- 1 - sig
+  statistik <- data %>%
+    group_by(id_sampel) %>%
+    summarize(
+      rerata = mean(nilai),
+      sd = sd(nilai),
+      se = sd(nilai) / sqrt(n()),
+      t_bawah = mean(nilai) - qt(1 - sig / 2,
+                                 n() - 1) * (sd(nilai) / sqrt(n())),
+      t_atas = mean(nilai) + qt(1 - sig / 2,
+                                n() - 1) * (sd(nilai) / sqrt(n())),
+      z_bawah = mean(nilai) - qnorm(1 - sig / 2,
+                                    mean = 0, sd = 1),
+      z_atas = mean(nilai) + qnorm(1 - sig / 2,
+                                   mean = 0, sd = 1),
+      stat_uji = (mean(nilai) - mu) / (sd(nilai) / sqrt(n()))
+    )
+  # Menambahkan variabel apakah selang kepercayaan mencakup mu
+  statistik <- mutate(statistik,
+                      t_mencakup = t_bawah <= mu & t_atas >= mu,
+                      z_mencakup = z_bawah <= mu & z_atas >= mu
+                      )
+  
+  # Melakukan uji hipotesis untuk menentukan nilai p
+  if (alternatif == "dua") {
+    statistik <- mutate(statistik,
+                        t_p = 2 * pt(-abs(stat_uji),
+                                     df = n() - 1),
+                        z_p = 2 * pnorm(-abs(stat_uji),
+                                        mean = 0, sd = 1))
+  } else if (alternatif == "kiri") {
+    statistik <- mutate(statistik,
+                        t_p = pt(stat_uji, df = n() - 1),
+                        z_p = pnorm(stat_uji,
+                                    mean = 0, sd = 1))
+  } else if (alternative == "kanan") {
+    statistik <- mutate(statistik,
+                        t_p = 1 - pt(stat_uji, df = n() - 1),
+                        z_p = 1 - pnorm(stat_uji, mean = 0, sd = 1))
+  }
+  
+  # Menentukan apakah uji hipotesisnya signifikan
+  statistik <- mutate(statistik,
+                      t_sig = t_p <= sig,
+                      z_sig = z_p <= sig
+                      )
+  return(statistik)
+}
+
+komposisi_sampel_stat <- function(k, n, mu, sigma,
+                                  alternatif = "dua", sig = .05) {
+  set_sampel <- membuat_set_sampel(k, n, mu, sigma)
+  data_stat <- menghitung_statistik(set_sampel, mu, alternatif, sig)
+  return(data_stat)
+}
+
 # Antarmuka pengguna ----
 ui <- fluidPage(
   title = "Mengapa Distribusi-t?",
