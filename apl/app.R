@@ -34,7 +34,7 @@ ui <- fluidPage(
                             value = 95,
                             step = 1),
                 checkboxGroupInput("dist_sampling",
-                                   "Distribusi sampling:",
+                                   "Distribusi sampling*:",
                                    choices = c("Distribusi z" =
                                                  "dist_z",
                                                "Distribusi t" =
@@ -52,7 +52,8 @@ ui <- fluidPage(
                             min = 50,
                             max = 150,
                             value = 100)
-              )
+              ),
+              helpText("*Model matematis distribusi sampling rerata yang dikonstruksi dengan menggunakan rerata dan simpangan baku sampel.")
             ),
             ### Panel selang kepercayaan ----
             mainPanel(
@@ -116,7 +117,7 @@ ui <- fluidPage(
                                                     "Ekor kiri" = "kiri",
                                                     "Ekor kanan" = "kanan")),
                             checkboxGroupInput("dist_sampling_2",
-                                               "Distribusi sampling:",
+                                               "Distribusi sampling*:",
                                                choices = c("Distribusi z" =
                                                              "dist_z",
                                                            "Distribusi t" =
@@ -134,7 +135,8 @@ ui <- fluidPage(
                                         min = 50,
                                         max = 150,
                                         value = 100)
-                          )
+                          ),
+                          helpText("*Model matematis distribusi sampling rerata yang dikonstruksi dengan menggunakan rerata dan simpangan baku sampel.")
                         ),
                         ### Panel utama uji hipotesis ----
                         mainPanel(
