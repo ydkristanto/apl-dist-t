@@ -75,8 +75,11 @@ ui <- fluidPage(
                 br(),
                 plotOutput("plot_selisih_sk_zt",
                              height = "300px"),
+                textOutput("teks_selisih_sk_zt"),
                 br(),
-                plotOutput("plot_wakil_sampel_sk", height = "300px")
+                plotOutput("plot_wakil_sampel_sk", height = "300px"),
+                textOutput(("teks_wakil_sampel_sk")),
+                br()
               )
               )
               )
@@ -698,6 +701,9 @@ server <- function(input, output) {
     x_range <- x_maks - x_min
     plot_range <- c(x_min - x_range / 4,
                     x_maks + x_range / 4)
+    
+    slsh_persen <- round(abs(data_stat$prop_mencakup[1] - data_stat$prop_mencakup[2]) * 100, 2)
+    pos_x <- data_stat$prop_mencakup[1] + slsh_persen / 200
     ggplot(data_stat) +
       geom_segment(aes(x = prop_mencakup, xend = tingkat_keper,
                        y = dist_sampling, yend = dist_sampling,
@@ -707,15 +713,26 @@ server <- function(input, output) {
       geom_segment(aes(x = tingkat_keper, xend = tingkat_keper,
                        y = 0, yend = Inf),
                    linewidth = 3, alpha = .6) +
+      geom_segment(aes(x = prop_mencakup[1], xend = prop_mencakup[2],
+                       y = factor(1), yend = factor(1)),
+                   show.legend = FALSE, linewidth = 5, color = "#7570b3",
+                   alpha = .2) +
+      geom_point(aes(x = prop_mencakup, y = factor(1)),
+                 size = 8, color = "#7570b3") +
       geom_point(aes(x = prop_mencakup,
                      y = dist_sampling,
                      col = dist_sampling),
                  size = 8) +
       geom_label(aes(x = prop_mencakup, y = dist_sampling,
                     label = persen_mencakup, col = dist_sampling),
-                fill = "white", fontface = "bold",
-                nudge_y = .175, label.r = unit(0.1, "lines"),
+                fill = "white", fontface = "bold", size = 5,
+                nudge_y = .25, label.r = unit(0.1, "lines"),
                 show.legend = FALSE) +
+      geom_label(aes(x = pos_x, y = factor(1),
+                     label = paste0(slsh_persen, "%")),
+                 color = "#7570b3", fill = "white", fontface = "bold",
+                 size = 5, label.r = unit(0.1, "lines"),
+                 show.legend = FALSE) +
       scale_x_continuous(labels = label_percent(scale = 100),
                          limits = plot_range) +
       scale_color_brewer(palette = "Dark2", name = "Distribusi sampling") +
@@ -726,6 +743,25 @@ server <- function(input, output) {
             axis.ticks.y = element_blank()) +
       labs(x = "Persentase")
   })
+  
+  ## Teks selisih SK ----
+  output$teks_selisih_sk_zt <- renderText({
+    data_stat <- stat_set_sampel()
+    data_stat <- data_stat %>% 
+      select(id_sampel, z_mencakup, t_mencakup) %>% 
+      summarise(z = mean(z_mencakup), t = mean(t_mencakup)) %>% 
+      pivot_longer(cols = c(z, t), names_to = "dist_sampling", 
+                   values_to = "prop_mencakup") %>% 
+      mutate(persen_mencakup = paste0(round(prop_mencakup * 100, 2),
+                                      "%"))
+    
+    tingkat_keper <- 1 - input$tingkat_sig
+    k <- input$banyak_sampel
+    slsh_persen <- round(abs(data_stat$prop_mencakup[1] - data_stat$prop_mencakup[2]) * 100, 2)
+    
+    paste0("Gambar 2.a: Perbedaan persentase selang kepercayaan yang memuat rerata populasi antara selang yang menggunakan distribusi z dan t. Perbedaan tersebut kurang lebih sebesar ", slsh_persen, "%.")
+  })
+  
   
   ## Plot perwakilan sampel ----
   output$plot_wakil_sampel_sk <- renderPlot({
@@ -757,12 +793,57 @@ server <- function(input, output) {
       geom_point(size = 3, alpha = .6) +
       geom_crossbar(stat = "summary", color = "black",
                     width = .5, fatten = 3) +
+      stat_summary(fun = "mean", geom = "point", color = "darkred",
+                   size = 5) +
       geom_hline(yintercept = rerata_pop,
                  linewidth = 1, linetype = "dashed") +
       theme_bw(base_size = 14) +
-      scale_color_brewer(palette = "Dark2") +
-      theme(legend.position = "bottom") +
+      scale_color_manual(values = c("0" = "#d95f02",
+                                    "1" = "#7570b3",
+                                    "2" = "#1b9e77")) +
+      theme(legend.position = "none") +
       labs(x = "ID Sampel", y = "Nilai")
+  })
+  
+  ## Teks perwakilan sampel ----
+  output$teks_wakil_sampel_sk <- renderText({
+    rerata_pop <- input$rerata_pop
+    data_sampel <- rep_membuat_set_sampel(input$banyak_sampel,
+                                          input$ukuran_sampel,
+                                          input$rerata_pop,
+                                          input$sigma_pop)
+    data_stat <- stat_set_sampel()
+    data_stat <- data_stat %>% 
+      mutate(mencakup = ifelse(z_mencakup == FALSE & t_mencakup == FALSE,
+                               0, ifelse(z_mencakup == FALSE & t_mencakup == TRUE, 
+                                         1, 2))) %>% 
+      group_by(mencakup) %>% 
+      slice_sample(n = 5, replace = FALSE)
+    data_stat_simpel <- data_stat %>% 
+      select(id_sampel, rerata, se, mencakup)
+    
+    no_sampel <- data_stat$id_sampel
+    
+    data_sampel_wakil <- data_sampel %>% 
+      filter(id_sampel %in% no_sampel)
+    data_sampel_wakil <- left_join(data_sampel_wakil, data_stat_simpel,
+                                   by = "id_sampel")
+    n <- input$ukuran_sampel
+    n_0 <- sum(data_sampel_wakil$mencakup == 0) / n
+    n_1 <- sum(data_sampel_wakil$mencakup == 1) / n
+    n_2 <- sum(data_sampel_wakil$mencakup == 2) / n
+    n_total <- n_0 + n_1 + n_2
+    
+    if (n_1 > 0 & n_0 > 0) {
+      paste("Gambar 2.b: Distribusi ", n_total, " perwakilan sampel. Diagram violin berwarna oranye menunjukkan distribusi sampel-sampel yang selang kepercayaannya tidak memuat rerata populasi, baik menggunakan distribusi z maupun t sebagai distribusi samplingnya. Diagram ungu menunjukkan sampel-sampel yang selang kepercayannya tidak memuat rerata populasi ketika menggunakan distribusi z sebagai distribusi samplingnya, tetapi memuat rerata populasi ketika distribusi samplingnya adalah distribusi t. Terakhir, diagram hijau merepresentasikan sampel-sampel yang selang kepercayaannya memuat rerata populasi.")
+    } else if (n_1 == 0 & n_0 > 0) {
+      paste0("Gambar 2.b: Distribusi ", n_total, " perwakilan sampel. Diagram violin berwarna oranye menunjukkan distribusi sampel-sampel yang selang kepercayaannya tidak memuat rerata populasi, baik menggunakan distribusi z maupun t sebagai distribusi samplingnya. Diagram hijau merepresentasikan sampel-sampel yang selang kepercayaannya memuat rerata populasi.")
+    } else if (n_1 == 0 & n_0 == 0) {
+      paste0("Gambar 2.b: Distribusi ", n_total, " perwakilan sampel. Diagram violin tersebut menunjukkan distribusi beberapa perwakilan sampel yang selang kepercayaannya memuat rerata populasi.")
+    } else if (n_1 > 0 & n_0 == 0) {
+      paste0("Gambar 2.b: Distribusi ", n_total, " perwakilan sampel. Diagram violin berwarna oranye menunjukkan distribusi sampel-sampel yang selang kepercayaannya tidak memuat rerata populasi, baik menggunakan distribusi z maupun t sebagai distribusi samplingnya. Diagram ungu menunjukkan sampel-sampel yang selang kepercayannya tidak memuat rerata populasi ketika menggunakan distribusi z sebagai distribusi samplingnya, tetapi memuat rerata populasi ketika distribusi samplingnya adalah distribusi t.")
+    }
+    
   })
   
 }
