@@ -112,7 +112,7 @@ ui <- fluidPage(
                                         value = 0.05,
                                         step = 0.01),
                             selectInput("jenis_uji",
-                                        "Hipotesi alternatif:",
+                                        "Hipotesis alternatif:",
                                         choices = c("Tidak sama dengan" = "dua",
                                                     "Kurang dari" = "kiri",
                                                     "Lebih dari" = "kanan")),
@@ -202,7 +202,12 @@ ui <- fluidPage(
                           div(p("Tujuan aplikasi ini adalah untuk mendemonstrasikan kekuatan distribusi t tersebut. Distribusi ini lebih baik dibandingkan dengan distribusi normal baku untuk memodelkan distribusi sampling rerata sampel-sampel yang kecil, ketika rerata dan simpangan baku populasi diestimasi dengan rerata dan simpangan baku sampel."), align = "justify"),
                           hr(),
                           div(p("Aplikasi interaktif ini dikembangkan dengan menggunakan bahasa pemrogram", a("R", href = "https://www.R-project.org/", target = "_blank"), "dan paket", a("Shiny.", href = "https://CRAN.R-project.org/package=shiny", target = "_blank"), "Paket", a("shinylive", href = "https://posit-dev.github.io/r-shinylive/", target = "_blank"), "digunakan untuk mengekspor aplikasi ini agar dapat dijalankan di peramban web tanpa peladen R yang terpisah."), align = "justify"),
-                          div(p("Pengembang dan pemelihara aplikasi ini adalah", a("Yosep Dwi Kristanto,", href = "https://people.usd.ac.id/~ydkristanto/", target = "_blank"), "seorang dosen dan peneliti di program studi", a("Pendidikan Matematika,", href = "https://usd.ac.id/s1pmat", target = "_blank"), a("Universitas Sanata Dharma,", href = "https://www.usd.ac.id/", target = "_blank"), "Yogyakarta."), align = "justify")
+                          div(p("Pengembang dan pemelihara aplikasi ini adalah", a("Yosep Dwi Kristanto,", href = "https://people.usd.ac.id/~ydkristanto/", target = "_blank"), "seorang dosen dan peneliti di program studi", a("Pendidikan Matematika,", href = "https://usd.ac.id/s1pmat", target = "_blank"), a("Universitas Sanata Dharma,", href = "https://www.usd.ac.id/", target = "_blank"), "Yogyakarta."), align = "justify"),
+                          hr(),
+                          div(h4("Penafian tentang penggunaan AI:",
+                                 style = "font-size: inherit; font-weight: bold")),
+                          div(p("Perumusan kode-kode di balik aplikasi Shiny ini dibantu oleh kecerdasan buatan (AI) yang akurasinya selalu diawasi secara cermat oleh pengembang. Meskipun demikian, ide konseptual dan mendasar dari aplikasi ini orisinal dan dihasilkan oleh pengembang. Setiap potensi kesalahan atau keterbatasan dalam kode-kode tersebut menjadi tanggung jawab pengembang, dan bantuan AI diakui sebagai alat pendukung dalam proses pengembangan aplikasi ini.")),
+                          br()
                           )
                           # di sini
                           )
